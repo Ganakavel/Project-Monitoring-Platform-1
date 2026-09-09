@@ -13,13 +13,25 @@ export const OverviewView: React.FC = () => {
   const { projects, tasks, teamMembers } = useApp();
 
   // Dynamically calculate KPIs based on live tasks & projects
-  const activeProjectsCount = projects.filter((p) => p.status === 'active').length + 18; // 24 total matching screenshot
-  
-  // Real-time calculation: 156 baseline + dynamic changes
+  const activeProjectsCount = projects.filter((p) => p.status === 'active').length;
+  const totalProjectsCount = projects.length;
+  const onlineMembersCount = teamMembers.filter((m) => m.status === 'online').length;
+
+  // Real-time task completion
   const completedTasksCount = tasks.filter((t) => t.completed).length;
-  const totalTasksDisplay = 200;
-  const completedTasksDisplay = 155 + completedTasksCount;
-  const radialProgress = Math.min(100, Math.round((completedTasksDisplay / totalTasksDisplay) * 100));
+  const totalTasksCount = tasks.length;
+  const radialProgress = totalTasksCount > 0
+    ? Math.round((completedTasksCount / totalTasksCount) * 100)
+    : 0;
+
+  const totalHoursDecimal = projects.reduce((s, p) => s + (p.hoursTracked || 0), 0);
+  const hoursDisplay = (() => {
+    const h = Math.floor(totalHoursDecimal);
+    const m = Math.round((totalHoursDecimal - h) * 60);
+    if (h === 0) return `${m}m`;
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}m`;
+  })();
 
   return (
     <div className="space-y-5 pb-12">
@@ -28,8 +40,8 @@ export const OverviewView: React.FC = () => {
         {/* Active Projects */}
         <StatCard
           title="Active Projects"
-          value={activeProjectsCount}
-          trend="+12% vs last month"
+          value={`${activeProjectsCount} / ${totalProjectsCount}`}
+          trend={`${totalProjectsCount - activeProjectsCount} completed`}
           icon={
             <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
               <Folder className="w-5 h-5 fill-blue-600/20" />
@@ -40,16 +52,16 @@ export const OverviewView: React.FC = () => {
         {/* Tasks Completed (with radial ring) */}
         <StatCard
           title="Tasks Completed"
-          value={`${completedTasksDisplay} / ${totalTasksDisplay}`}
-          trend="+8% vs last month"
+          value={`${completedTasksCount} / ${totalTasksCount}`}
+          trend={`${radialProgress}% completion rate`}
           radialProgress={radialProgress}
         />
 
-        {/* Hours Tracked */}
+        {/* Hours Tracked — live h + m */}
         <StatCard
           title="Hours Tracked"
-          value="132h"
-          trend="+5% vs last month"
+          value={hoursDisplay}
+          trend={`${Math.floor(totalHoursDecimal)}h ${Math.round((totalHoursDecimal % 1) * 60)}m logged`}
           icon={
             <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
               <Clock className="w-5 h-5 fill-amber-600/20" />
@@ -57,11 +69,11 @@ export const OverviewView: React.FC = () => {
           }
         />
 
-        {/* Team Members */}
+        {/* Team Members — real-time */}
         <StatCard
           title="Team Members"
-          value={teamMembers.length + 14} // 18 members matching screenshot
-          trend="+2 vs last month"
+          value={teamMembers.length}
+          trend={`${onlineMembersCount} online now`}
           icon={
             <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
               <Users className="w-5 h-5 fill-purple-600/20" />

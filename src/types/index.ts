@@ -42,6 +42,7 @@ export interface Project {
   color: string;
   budget?: string;
   hoursTracked?: number;
+  memberIds?: string[]; // assigned team member IDs
 }
 
 export interface CalendarEvent {

@@ -23,6 +23,7 @@ import {
   initialTeamMembers,
   initialChatMessages,
   initialDocuments,
+  TEAM_USERS,
 } from '../data/initialData';
 
 export interface SearchResults {
@@ -108,6 +109,7 @@ interface AppContextType {
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => boolean;
   signOut: () => void;
+  registerAccount: (name: string, email: string, password: string, role: string, avatar: string) => { success: boolean; error?: string };
 
   // Notifications
   notifications: Array<{ id: string; title: string; time: string; read: boolean; type: string }>;
@@ -127,11 +129,43 @@ const STORAGE_KEYS = {
   DOCUMENTS: 'nexgen_documents_v1',
   MEMBERS: 'nexgen_members_v1',
   AUTH: 'nexgen_auth_v1',
+  ACCOUNTS: 'nexgen_accounts_v1',  // dynamically created accounts
 };
 
-// Demo credentials (matches SignInPage)
-const DEMO_EMAIL = 'demo@nexgencreators.io';
-const DEMO_PASSWORD = 'nexgen2026';
+// Default avatar pool for new registrations
+export const DEFAULT_AVATARS = [
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1544725176-7c40e5a71c5e?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1552374196-c4e7ffc6e126?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+];
+
+// Helper: read dynamic accounts from localStorage
+export interface DynamicAccount {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  avatar: string;
+  department: string;
+  createdAt: number;
+}
+
+function loadDynamicAccounts(): DynamicAccount[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveDynamicAccounts(accounts: DynamicAccount[]) {
+  localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
+}
 
 // Calculate real Today's Date
 const getTodayString = () => {
@@ -151,17 +185,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const signIn = (email: string, password: string): boolean => {
-    const ok = email.trim().toLowerCase() === DEMO_EMAIL && password === DEMO_PASSWORD;
-    if (ok) {
+    const normalEmail = email.trim().toLowerCase();
+
+    // 1. Check built-in team users
+    const matched = TEAM_USERS.find(
+      (u) => u.email.toLowerCase() === normalEmail && u.password === password
+    );
+    if (matched) {
       localStorage.setItem(STORAGE_KEYS.AUTH, 'true');
+      localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(matched.profile));
+      setProfileState(matched.profile);
       setIsAuthenticated(true);
+      return true;
     }
-    return ok;
+
+    // 2. Check dynamically registered accounts
+    const dynamicAccounts = loadDynamicAccounts();
+    const dynMatch = dynamicAccounts.find(
+      (a) => a.email.toLowerCase() === normalEmail && a.password === password
+    );
+    if (dynMatch) {
+      const dynProfile: import('../types').UserProfile = {
+        id: dynMatch.id,
+        name: dynMatch.name,
+        email: dynMatch.email,
+        role: dynMatch.role,
+        avatar: dynMatch.avatar,
+        status: 'online',
+        bio: `${dynMatch.role} at NexGen Creators`,
+        department: dynMatch.department,
+        timezone: 'GMT+5:30 (IST)',
+        notificationsEnabled: true,
+      };
+      localStorage.setItem(STORAGE_KEYS.AUTH, 'true');
+      localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(dynProfile));
+      setProfileState(dynProfile);
+      setIsAuthenticated(true);
+      return true;
+    }
+
+    return false;
   };
 
   const signOut = () => {
     localStorage.removeItem(STORAGE_KEYS.AUTH);
+    localStorage.removeItem(STORAGE_KEYS.PROFILE);
     setIsAuthenticated(false);
+  };
+
+  const registerAccount = (
+    name: string,
+    email: string,
+    password: string,
+    role: string,
+    avatar: string
+  ): { success: boolean; error?: string } => {
+    const normalEmail = email.trim().toLowerCase();
+
+    // Check duplicate in built-in users
+    if (TEAM_USERS.some((u) => u.email.toLowerCase() === normalEmail)) {
+      return { success: false, error: 'This email is already registered.' };
+    }
+
+    // Check duplicate in dynamic accounts
+    const existing = loadDynamicAccounts();
+    if (existing.some((a) => a.email.toLowerCase() === normalEmail)) {
+      return { success: false, error: 'This email is already registered.' };
+    }
+
+    const newId = `dyn-${Date.now()}`;
+    const newAccount: DynamicAccount = {
+      id: newId,
+      name: name.trim(),
+      email: normalEmail,
+      password,
+      role: role.trim() || 'Team Member',
+      avatar,
+      department: 'General',
+      createdAt: Date.now(),
+    };
+
+    saveDynamicAccounts([...existing, newAccount]);
+
+    // Also add to teamMembers so they appear in the team view & chat immediately
+    const newMember: import('../types').TeamMember = {
+      id: newId,
+      name: newAccount.name,
+      role: newAccount.role,
+      avatar: newAccount.avatar,
+      status: 'online',
+      email: newAccount.email,
+      activeTasks: 0,
+      department: 'General',
+    };
+    setTeamMembers((prev) => {
+      const updated = [...prev, newMember];
+      localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(updated));
+      return updated;
+    });
+
+    return { success: true };
   };
 
   // Online status tracking with browser navigator

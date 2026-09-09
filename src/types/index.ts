@@ -41,8 +41,9 @@ export interface Project {
   completedTasks: number;
   color: string;
   budget?: string;
-  hoursTracked?: number;
-  memberIds?: string[]; // assigned team member IDs
+  hoursTracked?: number;     // total hours logged (decimal)
+  memberIds?: string[];      // assigned team member IDs
+  timerStart?: number | null; // epoch ms when timer last started; null = stopped
 }
 
 export interface CalendarEvent {

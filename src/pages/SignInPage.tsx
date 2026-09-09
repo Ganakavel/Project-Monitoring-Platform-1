@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Eye, EyeOff, LogIn, UserPlus, Zap, CheckCircle, Lock, Mail, AlertCircle, Users } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Eye, EyeOff, LogIn, UserPlus, Zap, CheckCircle, Lock, Mail, AlertCircle, Users, User, Briefcase } from 'lucide-react';
 import { TEAM_USERS, TeamUser } from '../data/initialData';
+import { useApp, DEFAULT_AVATARS, DynamicAccount } from '../context/AppContext';
 
 interface SignInPageProps {
   onSignIn: (email: string, password: string) => boolean;
@@ -14,10 +15,16 @@ const features = [
 ];
 
 export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
+  const { registerAccount } = useApp();
   const [tab, setTab] = useState<'signin' | 'signup'>('signin');
+  
+  // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState('');
@@ -25,8 +32,43 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
   const [signupSuccess, setSignupSuccess] = useState(false);
   const [selectedMember, setSelectedMember] = useState<TeamUser | null>(null);
 
-  // Unique members for display (skip demo alias, keep one per memberId)
-  const displayMembers = TEAM_USERS.filter((u) => u.email !== 'demo@nexgencreators.io');
+  // Dynamic accounts refresh trigger
+  const [dynamicRefreshKey, setDynamicRefreshKey] = useState(0);
+
+  // Combine built-in TEAM_USERS with dynamic accounts from localStorage
+  const displayMembers: TeamUser[] = useMemo(() => {
+    const builtIn = TEAM_USERS.filter((u) => u.email !== 'demo@nexgencreators.io');
+    
+    // Read dynamic accounts from localStorage
+    let dynamicUsers: TeamUser[] = [];
+    try {
+      const raw = localStorage.getItem('nexgen_accounts_v1');
+      if (raw) {
+        const parsed: DynamicAccount[] = JSON.parse(raw);
+        dynamicUsers = parsed.map((acc) => ({
+          email: acc.email,
+          password: acc.password,
+          memberId: acc.id,
+          profile: {
+            id: acc.id,
+            name: acc.name,
+            role: acc.role,
+            email: acc.email,
+            avatar: acc.avatar,
+            status: 'online' as const,
+            bio: `${acc.role} at NEXGEN Project Monitoring Platform`,
+            department: acc.department || 'General',
+            timezone: 'GMT+5:30 (IST)',
+            notificationsEnabled: true,
+          },
+        }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    return [...builtIn, ...dynamicUsers];
+  }, [dynamicRefreshKey]);
 
   const handleMemberClick = (user: TeamUser) => {
     setSelectedMember(user);
@@ -39,7 +81,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 700));
+    await new Promise((r) => setTimeout(r, 600));
     const ok = onSignIn(email.trim(), password);
     if (!ok) setError('Invalid email or password. Pick a member below or enter credentials manually.');
     setLoading(false);
@@ -48,17 +90,41 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    
+    if (!name.trim()) { setError('Full Name is required.'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
+    await new Promise((r) => setTimeout(r, 700));
+
+    // Pick a random avatar from DEFAULT_AVATARS pool
+    const randomAvatar = DEFAULT_AVATARS[Math.floor(Math.random() * DEFAULT_AVATARS.length)];
+    const userRole = role.trim() || 'Team Member';
+
+    const result = registerAccount(name.trim(), email.trim(), password, userRole, randomAvatar);
+    
     setLoading(false);
+
+    if (!result.success) {
+      setError(result.error || 'Failed to create account.');
+      return;
+    }
+
+    // Refresh display list
+    setDynamicRefreshKey((k) => k + 1);
     setSignupSuccess(true);
+
     setTimeout(() => {
       setSignupSuccess(false);
       setTab('signin');
-      setPassword('');
-    }, 2000);
+      // Auto fill sign in inputs
+      setEmail(email.trim());
+      setPassword(password);
+      setName('');
+      setRole('');
+      setConfirmPassword('');
+    }, 1500);
   };
 
   return (
@@ -85,8 +151,8 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
             <Zap className="w-5 h-5 text-white" />
           </div>
           <div>
-            <p className="text-white font-bold text-lg leading-none">NexGen Creators</p>
-            <p className="text-blue-200 text-xs">Project Monitoring Platform</p>
+            <p className="text-white font-black text-xl tracking-tight leading-none">NEXGEN</p>
+            <p className="text-blue-200 text-xs font-semibold">Project Monitoring Platform</p>
           </div>
         </div>
 
@@ -111,7 +177,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
           {/* Team avatars on branding panel */}
           <div className="flex items-center gap-2">
             <div className="flex -space-x-2">
-              {displayMembers.slice(0, 6).map((u) => (
+              {displayMembers.slice(0, 7).map((u) => (
                 <img
                   key={u.memberId + u.email}
                   src={u.profile.avatar}
@@ -122,12 +188,12 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
               ))}
             </div>
             <p className="text-blue-100 text-xs ml-1">
-              <span className="font-bold text-white">{displayMembers.length} team members</span> already inside
+              <span className="font-bold text-white">{displayMembers.length} team members</span> registered
             </p>
           </div>
         </div>
 
-        <div className="relative text-blue-300 text-xs">© 2026 NexGen Creators. All rights reserved.</div>
+        <div className="relative text-blue-300 text-xs">© 2026 NEXGEN Project Monitoring Platform. All rights reserved.</div>
       </div>
 
       {/* ── Right form panel ── */}
@@ -137,7 +203,10 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
             <Zap className="w-4 h-4 text-white" />
           </div>
-          <p className="text-slate-800 font-bold text-base">NexGen Creators</p>
+          <div>
+            <p className="text-slate-800 font-black text-base tracking-tight leading-none">NEXGEN</p>
+            <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider">Project Monitoring Platform</p>
+          </div>
         </div>
 
         <div className="w-full max-w-sm">
@@ -179,11 +248,16 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
 
                   {/* ── Team Member Quick-Select ── */}
                   <div className="mb-5">
-                    <p className="text-xs font-semibold text-slate-600 mb-2.5 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-blue-500" />
-                      Select your account
+                    <p className="text-xs font-semibold text-slate-600 mb-2.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-blue-500" />
+                        Select your account
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        {displayMembers.length} accounts
+                      </span>
                     </p>
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
                       {displayMembers.map((user) => {
                         const isSelected = selectedMember?.email === user.email;
                         return (
@@ -281,11 +355,12 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
                       <span>📋 View all team credentials</span>
                       <span className="text-slate-400 group-open:rotate-90 transition-transform inline-block">›</span>
                     </summary>
-                    <div className="mt-2 rounded-xl border border-slate-100 overflow-hidden">
+                    <div className="mt-2 rounded-xl border border-slate-100 overflow-hidden max-h-44 overflow-y-auto">
                       <table className="w-full text-[10px]">
-                        <thead className="bg-slate-50">
+                        <thead className="bg-slate-50 sticky top-0">
                           <tr>
                             <th className="text-left px-2.5 py-1.5 text-slate-500 font-semibold">Member</th>
+                            <th className="text-left px-2.5 py-1.5 text-slate-500 font-semibold">Email</th>
                             <th className="text-left px-2.5 py-1.5 text-slate-500 font-semibold">Password</th>
                           </tr>
                         </thead>
@@ -302,6 +377,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
                                   <span className="font-semibold text-slate-700">{u.profile.name.split(' ')[0]}</span>
                                 </div>
                               </td>
+                              <td className="px-2.5 py-1.5 text-slate-500 truncate max-w-[90px]">{u.email}</td>
                               <td className="px-2.5 py-1.5 font-mono text-slate-500">{u.password}</td>
                             </tr>
                           ))}
@@ -316,15 +392,15 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
               {tab === 'signup' && (
                 <>
                   <h2 className="text-xl font-bold text-slate-800 mb-0.5">Create account</h2>
-                  <p className="text-xs text-slate-500 mb-5">Join the NexGen Creators workspace</p>
+                  <p className="text-xs text-slate-500 mb-4">Register as a new team member</p>
 
                   {signupSuccess ? (
                     <div className="flex flex-col items-center py-8 gap-3">
                       <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
                         <CheckCircle className="w-7 h-7 text-emerald-600" />
                       </div>
-                      <p className="text-sm font-semibold text-slate-800">Account created!</p>
-                      <p className="text-xs text-slate-500 text-center">Redirecting to sign in…</p>
+                      <p className="text-sm font-semibold text-slate-800">Account created successfully!</p>
+                      <p className="text-xs text-slate-500 text-center">Your profile is now added to the sign in page.</p>
                     </div>
                   ) : (
                     <>
@@ -334,41 +410,99 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
                           <p className="text-xs text-red-600">{error}</p>
                         </div>
                       )}
-                      <form onSubmit={handleSignUp} className="space-y-4">
+                      <form onSubmit={handleSignUp} className="space-y-3">
+                        {/* Name */}
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+                          <div className="relative">
+                            <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              required
+                              value={name}
+                              onChange={(e) => setName(e.target.value)}
+                              placeholder="e.g. Alex Morgan"
+                              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Role */}
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Role / Position</label>
+                          <div className="relative">
+                            <Briefcase className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              value={role}
+                              onChange={(e) => setRole(e.target.value)}
+                              placeholder="e.g. Frontend Developer, Designer"
+                              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Email */}
                         <div>
                           <label className="block text-xs font-semibold text-slate-700 mb-1">Email address</label>
                           <div className="relative">
                             <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com"
-                              className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                            <input
+                              type="email"
+                              required
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              placeholder="you@nexgencreators.io"
+                              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            />
                           </div>
                         </div>
+
+                        {/* Password */}
                         <div>
                           <label className="block text-xs font-semibold text-slate-700 mb-1">Password</label>
                           <div className="relative">
                             <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                            <input type={showPassword ? 'text' : 'password'} required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 6 characters"
-                              className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              required
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              placeholder="Min. 6 characters"
+                              className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            />
                             <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                           </div>
                         </div>
+
+                        {/* Confirm Password */}
                         <div>
                           <label className="block text-xs font-semibold text-slate-700 mb-1">Confirm password</label>
                           <div className="relative">
                             <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                            <input type={showConfirm ? 'text' : 'password'} required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Re-enter password"
-                              className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                            <input
+                              type={showConfirm ? 'text' : 'password'}
+                              required
+                              value={confirmPassword}
+                              onChange={(e) => setConfirmPassword(e.target.value)}
+                              placeholder="Re-enter password"
+                              className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            />
                             <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                               {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                           </div>
                         </div>
-                        <button type="submit" disabled={loading}
-                          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-md shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-60 flex items-center justify-center gap-2">
+
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-semibold shadow-md shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                        >
                           {loading ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                          {loading ? 'Creating…' : 'Create Account'}
+                          {loading ? 'Creating account…' : 'Create Account & Access'}
                         </button>
                       </form>
                     </>
@@ -378,7 +512,7 @@ export const SignInPage: React.FC<SignInPageProps> = ({ onSignIn }) => {
             </div>
           </div>
 
-          <p className="text-center text-xs text-slate-400 mt-5">NexGen Creators · Secured Platform · v2.0</p>
+          <p className="text-center text-xs text-slate-400 mt-5">NEXGEN Project Monitoring Platform · Secured Platform · v2.0</p>
         </div>
       </div>
     </div>

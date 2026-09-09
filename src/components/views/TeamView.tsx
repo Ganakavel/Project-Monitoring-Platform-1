@@ -19,7 +19,7 @@ export const TeamView: React.FC = () => {
       {/* Header with Add Member Button */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h3 className="font-bold text-slate-800 text-sm">NexGen Creators Team Directory</h3>
+          <h3 className="font-bold text-slate-800 text-sm">NEXGEN Team Directory</h3>
           <p className="text-xs text-slate-400">
             {teamMembers.length} active contributors across engineering, product design, and creative direction
           </p>

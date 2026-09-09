@@ -56,7 +56,7 @@ export const AddMemberModal: React.FC = () => {
             <X className="w-4 h-4" />
           </button>
           <div className="text-blue-100 text-xs font-semibold uppercase tracking-wider mb-1 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" /> NexGen Creators
+            <Sparkles className="w-3.5 h-3.5" /> NEXGEN Project Monitoring Platform
           </div>
           <h2 className="text-xl font-bold">Add Team Member</h2>
           <p className="text-xs text-blue-100 mt-0.5">

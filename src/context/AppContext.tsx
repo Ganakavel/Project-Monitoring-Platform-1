@@ -25,6 +25,7 @@ import {
   initialDocuments,
   TEAM_USERS,
 } from '../data/initialData';
+import { subscribeToFirestoreChat, sendFirestoreChatMessage, initFirebase } from '../services/firebaseService';
 
 export interface SearchResults {
   tasks: Task[];
@@ -40,6 +41,9 @@ interface AppContextType {
   addProject: (project: Omit<Project, 'id' | 'completedTasks'>) => void;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
+  startTimer: (projectId: string) => void;
+  stopTimer: (projectId: string) => void;
+  activeTimerProjectId: string | null;
   
   tasks: Task[];
   addTask: (task: Omit<Task, 'id'>) => void;
@@ -343,6 +347,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
+const [activeTimerProjectId, setActiveTimerProjectId] = useState<string | null>(null);
+const [timerTick, setTimerTick] = useState<number>(0);
   const [selectedDate, setSelectedDate] = useState<string>(todayDateStr);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -742,6 +748,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Timer Controls
+  const startTimer = (projectId: string) => {
+    setActiveTimerProjectId(projectId);
+    setProjects((prev) => {
+      const updated = prev.map((p) =>
+        p.id === projectId ? { ...p, timerStart: Date.now() } : p
+      );
+      localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updated));
+      broadcastSync({ projects: updated });
+      return updated;
+    });
+    addActivity('started timer', projectId, 'project');
+  };
+
+  const stopTimer = (projectId: string) => {
+    setProjects((prev) => {
+      const updated = prev.map((p) => {
+        if (p.id !== projectId || p.timerStart == null) return p;
+        const elapsedMs = Date.now() - p.timerStart;
+        const elapsedHours = Math.round((elapsedMs / (1000 * 60 * 60)) * 100) / 100;
+        const newHours = (p.hoursTracked ?? 0) + elapsedHours;
+        return { ...p, timerStart: null, hoursTracked: newHours };
+      });
+      localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updated));
+      broadcastSync({ projects: updated });
+      return updated;
+    });
+    setActiveTimerProjectId(null);
+    addActivity('stopped timer', projectId, 'project');
+  };
+
+  // Re-render every second when a timer is active
+  useEffect(() => {
+    if (!activeTimerProjectId) return;
+    const iv = setInterval(() => setTimerTick((t) => t + 1), 1000);
+    return () => clearInterval(iv);
+  }, [activeTimerProjectId]);
+
+
+
   // Calendar Events
   const addCalendarEvent = (eventData: Omit<CalendarEvent, 'id'>) => {
     const newEvent: CalendarEvent = {
@@ -832,6 +878,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Subscribe to real-time Firestore Cloud Chat messages across all public internet devices
+  useEffect(() => {
+    const unsub = subscribeToFirestoreChat((remoteMsgs) => {
+      setChatMessages((prev) => {
+        const map = new Map<string, ChatMessage>();
+        prev.forEach((m) => map.set(m.id, m));
+        remoteMsgs.forEach((rm) => {
+          map.set(rm.id, {
+            ...rm,
+            isCurrentUser: rm.senderName === profile.name || rm.senderId === profile.id,
+          });
+        });
+        const merged = Array.from(map.values()).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+        localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(merged));
+        return merged;
+      });
+    });
+    return () => {
+      if (unsub) unsub();
+    };
+  }, [profile.name, profile.id]);
+
   // Chat
   const sendChatMessage = (content: string, attachment?: ChatAttachment) => {
     if (!content.trim() && !attachment) return;
@@ -853,6 +921,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       broadcastSync({ chatMessages: updated });
       return updated;
     });
+
+    // Also publish to Cloud Firestore if connected
+    sendFirestoreChatMessage(userMsg);
 
     // Realistic collaborative reply after 1.4s
     setTimeout(() => {
@@ -880,6 +951,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         broadcastSync({ chatMessages: updated });
         return updated;
       });
+
+      sendFirestoreChatMessage(botMsg);
     }, 1400);
   };
 
@@ -916,6 +989,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addProject,
         updateProject,
         deleteProject,
+        startTimer,
+        stopTimer,
+        activeTimerProjectId,
         tasks,
         addTask,
         updateTask,
@@ -970,6 +1046,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isAuthenticated,
         signIn,
         signOut,
+        registerAccount,
         notifications,
         markAllNotificationsRead,
       }}

@@ -13,9 +13,12 @@ import {
   Users,
   Sparkles,
   RefreshCw,
+  Flame,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { ChatAttachment } from '../../types';
+import { FirebaseConfigModal } from '../modals/FirebaseConfigModal';
+import { initFirebase } from '../../services/firebaseService';
 
 // ── AI Message type (local only, not stored in context) ──────────────────────
 interface AiMessage {
@@ -51,7 +54,7 @@ function generateAiReply(
 
   // Greeting
   if (/\b(hi|hello|hey|sup|greetings|howdy)\b/.test(q)) {
-    return `👋 Hello, ${profile.name.split(' ')[0]}! I'm **NexGen AI**, your smart project assistant.\n\nYou have **${activeProjects.length} active projects** and **${pendingTasks.length} pending tasks** right now. What would you like to know?`;
+    return `👋 Hello, ${profile.name.split(' ')[0]}! I'm **NEXGEN AI**, your smart project assistant.\n\nYou have **${activeProjects.length} active projects** and **${pendingTasks.length} pending tasks** right now. What would you like to know?`;
   }
 
   // Projects
@@ -110,12 +113,12 @@ function generateAiReply(
   // Summary / dashboard
   if (/summary|overview|dashboard|status|report|update/.test(q)) {
     const rate = tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0;
-    return `📊 **NexGen Creators — Live Summary**\n\n🗂️ Projects: **${activeProjects.length} active** / ${projects.length} total\n✅ Tasks: **${completedTasks.length}** done, **${pendingTasks.length}** pending (${rate}%)\n👥 Team: **${teamMembers.length}** members, **${onlineMembers.length}** online\n⚠️ Overdue: **${overdueTasks.length}** task${overdueTasks.length !== 1 ? 's' : ''}\n🔴 High Priority: **${highPriority.length}** task${highPriority.length !== 1 ? 's' : ''}`;
+    return `📊 **NEXGEN — Live Summary**\n\n🗂️ Projects: **${activeProjects.length} active** / ${projects.length} total\n✅ Tasks: **${completedTasks.length}** done, **${pendingTasks.length}** pending (${rate}%)\n👥 Team: **${teamMembers.length}** members, **${onlineMembers.length}** online\n⚠️ Overdue: **${overdueTasks.length}** task${overdueTasks.length !== 1 ? 's' : ''}\n🔴 High Priority: **${highPriority.length}** task${highPriority.length !== 1 ? 's' : ''}`;
   }
 
   // Help
   if (/help|what can|what do|feature|command/.test(q)) {
-    return `🤖 I'm **NexGen AI** — here's what I can help you with:\n\n• **"Show active projects"** — list your projects\n• **"How many tasks pending?"** — task overview\n• **"Any overdue tasks?"** — check deadlines\n• **"Who's online?"** — team availability\n• **"Give me a summary"** — full dashboard report\n• **"High priority tasks"** — urgent items\n\nJust ask naturally!`;
+    return `🤖 I'm **NEXGEN AI** — here's what I can help you with:\n\n• **"Show active projects"** — list your projects\n• **"How many tasks pending?"** — task overview\n• **"Any overdue tasks?"** — check deadlines\n• **"Who's online?"** — team availability\n• **"Give me a summary"** — full dashboard report\n• **"High priority tasks"** — urgent items\n\nJust ask naturally!`;
   }
 
   // Profile
@@ -176,13 +179,17 @@ export const TeamChatWidget: React.FC = () => {
 
   // ── Tab state ──
   const [activeTab, setActiveTab] = useState<'team' | 'ai'>('team');
+  const [isFirebaseModalOpen, setIsFirebaseModalOpen] = useState(false);
+
+  const fbStatus = initFirebase();
+  const isCloudActive = fbStatus.success;
 
   // ── AI chat state ──
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([
     {
       id: 'ai-welcome',
       role: 'assistant',
-      content: `👋 Hi ${profile.name.split(' ')[0]}! I'm **NexGen AI**, your project assistant.\n\nI have real-time access to your projects, tasks, and team. Ask me anything!\n\n💡 Try: *"Give me a summary"* or *"Any overdue tasks?"*`,
+      content: `👋 Hi ${profile.name.split(' ')[0]}! I'm **NEXGEN AI**, your project assistant.\n\nI have real-time access to your projects, tasks, and team. Ask me anything!\n\n💡 Try: *"Give me a summary"* or *"Any overdue tasks?"*`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -307,7 +314,7 @@ export const TeamChatWidget: React.FC = () => {
             <Bot className="w-4 h-4" />
           )}
           <span className="font-bold text-xs tracking-tight">
-            {activeTab === 'team' ? 'Team Chat' : 'NexGen AI'}
+            {activeTab === 'team' ? 'Team Chat' : 'NEXGEN AI'}
           </span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
             activeTab === 'team' ? 'bg-blue-500/80' : 'bg-violet-500/80'
@@ -316,6 +323,17 @@ export const TeamChatWidget: React.FC = () => {
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => setIsFirebaseModalOpen(true)}
+            className={`p-1 rounded transition-colors flex items-center gap-1 ${
+              isCloudActive
+                ? 'bg-amber-500/20 text-amber-200 hover:bg-amber-500/30'
+                : 'hover:bg-blue-700 text-blue-100 hover:text-white'
+            }`}
+            title={isCloudActive ? 'Cloud Sync Active (Global Chat)' : 'Set up Cloud Sync for Public Host'}
+          >
+            <Flame className={`w-3.5 h-3.5 ${isCloudActive ? 'text-amber-300 fill-amber-300/40 animate-pulse' : ''}`} />
+          </button>
           {activeTab === 'ai' && !isChatMinimized && (
             <button
               onClick={clearAiChat}
@@ -366,13 +384,33 @@ export const TeamChatWidget: React.FC = () => {
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              NexGen AI
+              NEXGEN AI
             </button>
           </div>
 
           {/* ══════════════ TEAM CHAT TAB ══════════════ */}
           {activeTab === 'team' && (
             <>
+              {/* Cloud Sync Status Banner */}
+              <button
+                onClick={() => setIsFirebaseModalOpen(true)}
+                className={`flex items-center justify-between w-full px-3 py-1.5 text-[10px] font-semibold shrink-0 transition-colors ${
+                  isCloudActive
+                    ? 'bg-amber-50 text-amber-700 border-b border-amber-100'
+                    : 'bg-blue-50/60 text-blue-600 border-b border-slate-100 hover:bg-blue-100/60'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Flame className={`w-3 h-3 ${isCloudActive ? 'text-amber-500 fill-amber-400/40 animate-pulse' : 'text-blue-400'}`} />
+                  {isCloudActive
+                    ? '🌐 Cloud Sync Active — messaging across internet'
+                    : '🔒 Local-only · Click 🔥 to enable global cloud chat'}
+                </span>
+                <span className="underline opacity-70">
+                  {isCloudActive ? 'Manage' : 'Enable'}
+                </span>
+              </button>
+
               {/* Online Members Row */}
               <div className="bg-slate-50/80 border-b border-slate-100 px-3 py-2 flex items-center gap-3 overflow-x-auto shrink-0">
                 {teamMembers.map((member) => (
@@ -556,7 +594,7 @@ export const TeamChatWidget: React.FC = () => {
                 <input
                   id="ai-input"
                   type="text"
-                  placeholder="Ask NexGen AI anything..."
+                  placeholder="Ask NEXGEN AI anything..."
                   value={aiInput}
                   onChange={(e) => setAiInput(e.target.value)}
                   disabled={aiTyping}
@@ -574,6 +612,13 @@ export const TeamChatWidget: React.FC = () => {
           )}
         </>
       )}
+
+      {/* Firebase Cloud Sync Modal */}
+      <FirebaseConfigModal
+        isOpen={isFirebaseModalOpen}
+        onClose={() => setIsFirebaseModalOpen(false)}
+        onConfigSaved={() => setIsFirebaseModalOpen(false)}
+      />
     </div>
   );
 };

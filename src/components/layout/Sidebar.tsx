@@ -39,11 +39,11 @@ export const Sidebar: React.FC = () => {
         {/* Brand Header */}
         <div className="flex items-center gap-3 px-2 py-1">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-base shadow-md shadow-blue-500/25">
-            NC
+            NX
           </div>
           <div>
-            <span className="font-bold text-slate-800 text-base tracking-tight block">NexGen Creators</span>
-            <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block -mt-1">Studio Platform</span>
+            <span className="font-extrabold text-slate-800 text-base tracking-tight block">NEXGEN</span>
+            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block -mt-1">Project Monitoring Platform</span>
           </div>
         </div>
 

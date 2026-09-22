@@ -25,7 +25,9 @@ import {
   initialDocuments,
   TEAM_USERS,
 } from '../data/initialData';
-import { subscribeToFirestoreChat, sendFirestoreChatMessage, initFirebase } from '../services/firebaseService';
+import { subscribeToFirestoreChat, sendFirestoreChatMessage, initFirebase, 
+  addEntity, updateEntity, deleteEntity, subscribeToCollection, 
+  COL_PROJECTS, COL_TASKS, COL_NOTES, COL_CALENDAR } from '../services/firebaseService';
 
 export interface SearchResults {
   tasks: Task[];
@@ -718,6 +720,8 @@ const [timerTick, setTimerTick] = useState<number>(0);
       const updated = [...prev, newProject];
       localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(updated));
       broadcastSync({ projects: updated });
+      // Push to Firestore
+      addEntity(COL_PROJECTS, newProject);
       return updated;
     });
     addActivity('created project', newProject.title, 'project');
@@ -731,6 +735,8 @@ const [timerTick, setTimerTick] = useState<number>(0);
       broadcastSync({ projects: updated });
       return updated;
     });
+    // Sync to Firestore
+    updateEntity(COL_PROJECTS, id, updates);
     addActivity('updated project', updates.title || 'Project milestones', 'project');
   };
 
@@ -743,6 +749,8 @@ const [timerTick, setTimerTick] = useState<number>(0);
       broadcastSync({ projects: updated });
       return updated;
     });
+    // Delete from Firestore
+    deleteEntity(COL_PROJECTS, id);
     if (target) {
       addActivity('archived project', target.title, 'project');
     }

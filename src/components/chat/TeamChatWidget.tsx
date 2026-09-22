@@ -9,9 +9,7 @@ import {
   Send,
   FileText,
   Download,
-  Bot,
   Users,
-  Sparkles,
   RefreshCw,
   Flame,
 } from 'lucide-react';
@@ -552,14 +550,15 @@ export const TeamChatWidget: React.FC = () => {
                           : 'bg-white border border-violet-100 text-slate-800 rounded-bl-sm shadow-sm'
                       }`}>
                         {msg.isTyping ? (
-                          <div className="flex items-center gap-1 py-1">
-                            <span className="w-1.5 h-1.5 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <span className="w-1.5 h-1.5 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <span className="w-1.5 h-1.5 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                          </div>
-                        ) : (
-                          <AiText text={msg.content} />
-                        )}
+  <div className="flex items-center gap-2">
+    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+      <Bot className="w-3.5 h-3.5 text-white" />
+    </div>
+    <span className="text-xs text-slate-500 italic">NEXGEN AI is typing...</span>
+  </div>
+) : (
+  <AiText text={msg.content} />
+)}
                       </div>
                       {msg.timestamp && (
                         <span className="text-[9px] text-slate-400 mt-0.5 px-1">{msg.timestamp}</span>

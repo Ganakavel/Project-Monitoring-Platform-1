@@ -6,10 +6,84 @@ import {
   onSnapshot,
   query,
   orderBy,
+  doc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
   Firestore,
   Unsubscribe,
 } from 'firebase/firestore';
 import { ChatMessage } from '../types';
+
+// Export collection names for reuse
+export const COL_PROJECTS = 'projects';
+export const COL_TASKS = 'tasks';
+export const COL_NOTES = 'notes';
+export const COL_CALENDAR = 'calendar_events';
+
+/** Generic CRUD helpers for any collection */
+export const addEntity = async (col: string, data: any): Promise<boolean> => {
+  const { success, db } = initFirebase();
+  if (!success || !db) return false;
+  try {
+    await addDoc(collection(db, col), data);
+    return true;
+  } catch (e) {
+    console.error('addEntity error', e);
+    return false;
+  }
+};
+
+export const setEntity = async (col: string, id: string, data: any): Promise<boolean> => {
+  const { success, db } = initFirebase();
+  if (!success || !db) return false;
+  try {
+    await setDoc(doc(db, col, id), data);
+    return true;
+  } catch (e) {
+    console.error('setEntity error', e);
+    return false;
+  }
+};
+
+export const updateEntity = async (col: string, id: string, data: Partial<any>): Promise<boolean> => {
+  const { success, db } = initFirebase();
+  if (!success || !db) return false;
+  try {
+    await updateDoc(doc(db, col, id), data);
+    return true;
+  } catch (e) {
+    console.error('updateEntity error', e);
+    return false;
+  }
+};
+
+export const deleteEntity = async (col: string, id: string): Promise<boolean> => {
+  const { success, db } = initFirebase();
+  if (!success || !db) return false;
+  try {
+    await deleteDoc(doc(db, col, id));
+    return true;
+  } catch (e) {
+    console.error('deleteEntity error', e);
+    return false;
+  }
+};
+
+export const subscribeToCollection = <T>(col: string, onChange: (items: T[]) => void): Unsubscribe | null => {
+  const { success, db } = initFirebase();
+  if (!success || !db) return null;
+  const q = query(collection(db, col), orderBy('createdAt', 'asc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: T[] = [];
+      snap.forEach((doc) => items.push({ id: doc.id, ...(doc.data() as any) } as T));
+      onChange(items);
+    },
+    (err) => console.error('Firestore subscription error', err)
+  );
+};
 
 export interface FirebaseConfig {
   apiKey: string;

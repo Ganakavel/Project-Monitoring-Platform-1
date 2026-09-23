@@ -1,16 +1,24 @@
-import React, { useState } from 'react';
-import { Send, Smile, Paperclip, Search } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Send } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
 export const MessagesView: React.FC = () => {
   const { teamMembers, chatMessages, sendChatMessage, profile } = useApp();
   const [inputText, setInputText] = useState('');
+  const isSendingRef = useRef(false);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
-    sendChatMessage(inputText);
+    if (isSendingRef.current) return;
+    const text = inputText.trim();
+    if (!text) return;
+
+    isSendingRef.current = true;
     setInputText('');
+    sendChatMessage(text);
+    setTimeout(() => {
+      isSendingRef.current = false;
+    }, 400);
   };
 
   return (

@@ -25,9 +25,125 @@ import {
   initialDocuments,
   TEAM_USERS,
 } from '../data/initialData';
-import { subscribeToFirestoreChat, sendFirestoreChatMessage, initFirebase, 
-  addEntity, updateEntity, deleteEntity, subscribeToCollection, 
-  COL_PROJECTS, COL_TASKS, COL_NOTES, COL_CALENDAR } from '../services/firebaseService';
+import { fetchAll, insertRow, updateRow, deleteRow } from '../services/supabaseClient';
+import { subscribeToFirestoreChat, sendFirestoreChatMessage, initFirebase, addEntity, updateEntity, deleteEntity, subscribeToCollection, COL_PROJECTS, COL_TASKS, COL_NOTES, COL_CALENDAR } from '../services/firebaseService';
+
+// ... inside AppProvider component, after existing state declarations
+// Load tasks and chatMessages from Supabase on mount
+useEffect(() => {
+  // Fetch tasks
+  (async () => {
+    const supabaseTasks = await fetchAll<Task>('tasks');
+    if (supabaseTasks && supabaseTasks.length) {
+      setTasks(supabaseTasks);
+      localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(supabaseTasks));
+    }
+  })();
+  // Fetch chat messages
+  (async () => {
+    const supabaseMessages = await fetchAll<ChatMessage>('messages');
+    if (supabaseMessages && supabaseMessages.length) {
+      const deduped = deduplicateChatMessages(supabaseMessages);
+      setChatMessages(deduped);
+      localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(deduped));
+    }
+  })();
+}, []);
+
+// Modify sendChatMessage to persist to Supabase
+const sendChatMessage = (content: string, attachment?: ChatAttachment) => {
+  const timestamp = new Date().toLocaleTimeString();
+  const userMsg: ChatMessage = {
+    id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    senderId: profile.id,
+    senderName: profile.name,
+    senderAvatar: profile.avatar,
+    isCurrentUser: true,
+    content,
+    timestamp,
+    createdAt: Date.now(),
+    attachment,
+  };
+  // Optimistically update UI
+  setChatMessages((prev) => {
+    const next = [...prev, userMsg];
+    localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(next));
+    broadcastSync({ chatMessages: next });
+    return next;
+  });
+  // Persist to Supabase
+  insertRow('messages', userMsg).catch((e) => console.error('Supabase insert message error', e));
+  // Firestore optional fallback
+  sendFirestoreChatMessage(userMsg);
+};
+
+// Update addTask to also insert into Supabase
+const addTask = (taskData: Omit<Task, 'id'>) => {
+  const newTask: Task = {
+    ...taskData,
+    id: `task-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+  };
+  setTasks((prev) => {
+    const updated = [newTask, ...prev];
+    localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(updated));
+    broadcastSync({ tasks: updated });
+    return updated;
+  });
+  insertRow('tasks', newTask).catch((e) => console.error('Supabase insert task error', e));
+  if (newTask.dueDate) {
+    // existing calendar event logic unchanged
+    const newEvent: CalendarEvent = {
+      id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      title: newTask.title,
+      date: newTask.dueDate,
+      startTime: newTask.time || '10:00 AM',
+      endTime: '11:00 AM',
+      type: 'task',
+      color: '#3b82f6',
+      relatedTaskId: newTask.id,
+      relatedProjectId: newTask.projectId,
+    };
+    setCalendarEvents((prev) => {
+      const nextEvents = [...prev, newEvent];
+      localStorage.setItem(STORAGE_KEYS.CALENDAR, JSON.stringify(nextEvents));
+      broadcastSync({ calendarEvents: nextEvents });
+      return nextEvents;
+    });
+  }
+  addActivity('created task', newTask.title, 'task');
+};
+
+// Update updateTask to also sync with Supabase
+const updateTask = (id: string, updates: Partial<Task>) => {
+  setTasks((prev) => {
+    const updated = prev.map((t) => (t.id === id ? { ...t, ...updates } : t));
+    localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(updated));
+    broadcastSync({ tasks: updated });
+    return updated;
+  });
+  updateRow('tasks', id, updates).catch((e) => console.error('Supabase update task error', e));
+  addActivity('updated task', updates.title || 'Task details', 'task');
+};
+
+// Update deleteTask to also remove from Supabase
+const deleteTask = (id: string) => {
+  const target = tasks.find((t) => t.id === id);
+  setTasks((prev) => {
+    const updated = prev.filter((t) => t.id !== id);
+    localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(updated));
+    broadcastSync({ tasks: updated });
+    return updated;
+  });
+  deleteRow('tasks', id).catch((e) => console.error('Supabase delete task error', e));
+  setCalendarEvents((prev) => {
+    const updated = prev.filter((e) => e.relatedTaskId !== id);
+    localStorage.setItem(STORAGE_KEYS.CALENDAR, JSON.stringify(updated));
+    return updated;
+  });
+  if (target) {
+    addActivity('deleted task', target.title, 'task');
+  }
+};
 
 export interface SearchResults {
   tasks: Task[];
@@ -181,6 +297,35 @@ const getTodayString = () => {
   const d = String(now.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 };
+
+/** Deduplicates chat messages by ID and content signature (prevents local vs remote double display) */
+export const deduplicateChatMessages = (messages: ChatMessage[]): ChatMessage[] => {
+  const seenIds = new Set<string>();
+  const seenSignatures = new Set<string>();
+  const result: ChatMessage[] = [];
+
+  for (const m of messages) {
+    if (!m) continue;
+    const contentKey = (m.content || '').trim();
+    // 3-second window signature to catch duplicate messages with different IDs (local vs remote)
+    const timeBucket = Math.floor((m.createdAt || 0) / 3000);
+    const signature = `${m.senderId || m.senderName}_${contentKey}_${timeBucket}`;
+
+    if (seenIds.has(m.id) || (contentKey && seenSignatures.has(signature))) {
+      continue;
+    }
+
+    seenIds.add(m.id);
+    if (contentKey) {
+      seenSignatures.add(signature);
+    }
+    result.push(m);
+  }
+
+  return result.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+};
+
+const CURRENT_TAB_ID = 'tab-' + Math.random().toString(36).substring(2, 9);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const todayDateStr = useMemo(() => getTodayString(), []);
@@ -340,7 +485,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CHAT);
-    return saved ? JSON.parse(saved) : initialChatMessages;
+    const raw = saved ? JSON.parse(saved) : initialChatMessages;
+    return deduplicateChatMessages(raw);
   });
 
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => {
@@ -377,7 +523,7 @@ const [timerTick, setTimerTick] = useState<number>(0);
   const broadcastSync = (data: Record<string, unknown>) => {
     try {
       const channel = new BroadcastChannel('nexgen_creators_sync');
-      channel.postMessage({ type: 'SYNC_ALL', payload: data });
+      channel.postMessage({ type: 'SYNC_ALL', senderTabId: CURRENT_TAB_ID, payload: data });
       channel.close();
     } catch {
       // Ignore broadcast errors in restricted environments
@@ -516,8 +662,9 @@ const [timerTick, setTimerTick] = useState<number>(0);
   useEffect(() => {
     const channel = new BroadcastChannel('nexgen_creators_sync');
     channel.onmessage = (event) => {
-      const { type, payload } = event.data;
-      if (type === 'SYNC_ALL') {
+      const { type, payload, senderTabId } = event.data || {};
+      if (senderTabId === CURRENT_TAB_ID) return; // Ignore own broadcast!
+      if (type === 'SYNC_ALL' && payload) {
         if (payload.profile) setProfileState(payload.profile);
         if (payload.tasks) setTasks(payload.tasks);
         if (payload.projects) setProjects(payload.projects);
@@ -526,7 +673,9 @@ const [timerTick, setTimerTick] = useState<number>(0);
         if (payload.documents) setDocuments(payload.documents);
         if (payload.teamMembers) setTeamMembers(payload.teamMembers);
         if (payload.activities) setActivities(payload.activities);
-        if (payload.chatMessages) setChatMessages(payload.chatMessages);
+        if (payload.chatMessages) {
+          setChatMessages((prev) => deduplicateChatMessages([...prev, ...(payload.chatMessages as ChatMessage[])]));
+        }
       }
     };
 
@@ -890,15 +1039,11 @@ const [timerTick, setTimerTick] = useState<number>(0);
   useEffect(() => {
     const unsub = subscribeToFirestoreChat((remoteMsgs) => {
       setChatMessages((prev) => {
-        const map = new Map<string, ChatMessage>();
-        prev.forEach((m) => map.set(m.id, m));
-        remoteMsgs.forEach((rm) => {
-          map.set(rm.id, {
-            ...rm,
-            isCurrentUser: rm.senderName === profile.name || rm.senderId === profile.id,
-          });
-        });
-        const merged = Array.from(map.values()).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+        const enrichedRemote = remoteMsgs.map((rm) => ({
+          ...rm,
+          isCurrentUser: rm.senderName === profile.name || rm.senderId === profile.id,
+        }));
+        const merged = deduplicateChatMessages([...prev, ...enrichedRemote]);
         localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(merged));
         return merged;
       });
@@ -910,58 +1055,30 @@ const [timerTick, setTimerTick] = useState<number>(0);
 
   // Chat
   const sendChatMessage = (content: string, attachment?: ChatAttachment) => {
-    if (!content.trim() && !attachment) return;
+    const trimmed = content.trim();
+    if (!trimmed && !attachment) return;
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       senderId: profile.id,
       senderName: profile.name,
       senderAvatar: profile.avatar,
       isCurrentUser: true,
-      content,
+      content: trimmed,
       attachment,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       createdAt: Date.now(),
     };
 
     setChatMessages((prev) => {
-      const updated = [...prev, userMsg];
-      localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(updated));
-      broadcastSync({ chatMessages: updated });
-      return updated;
+      const merged = deduplicateChatMessages([...prev, userMsg]);
+      localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(merged));
+      return merged;
     });
+
+    broadcastSync({ chatMessages: [userMsg] });
 
     // Also publish to Cloud Firestore if connected
     sendFirestoreChatMessage(userMsg);
-
-    // Realistic collaborative reply after 1.4s
-    setTimeout(() => {
-      const botReplies = [
-        "Sounds great! I'll review the updated asset right away.",
-        "Got it, looking at the deliverables now.",
-        "Perfect! Synced with the team notes.",
-        "Thanks for sharing! Looks great for the milestone release.",
-      ];
-      const randomReply = botReplies[Math.floor(Math.random() * botReplies.length)];
-      const botMsg: ChatMessage = {
-        id: `msg-${Date.now() + 1}-${Math.random().toString(36).substring(2, 7)}`,
-        senderId: 'tm-2',
-        senderName: 'Sarah Johnson',
-        senderAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-        isCurrentUser: false,
-        content: randomReply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        createdAt: Date.now(),
-      };
-
-      setChatMessages((prev) => {
-        const updated = [...prev, botMsg];
-        localStorage.setItem(STORAGE_KEYS.CHAT, JSON.stringify(updated));
-        broadcastSync({ chatMessages: updated });
-        return updated;
-      });
-
-      sendFirestoreChatMessage(botMsg);
-    }, 1400);
   };
 
   const markAllNotificationsRead = () => {

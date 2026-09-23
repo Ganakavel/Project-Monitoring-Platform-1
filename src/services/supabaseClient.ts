@@ -8,17 +8,17 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKe
 
 /** Generic helper to fetch all rows from a given table */
 export const fetchAll = async <T = any>(table: string): Promise<T[]> => {
-  const { data, error } = await supabase.from<T>(table).select('*');
+  const { data, error } = await supabase.from(table).select('*');
   if (error) {
     console.error(`Supabase fetchAll error for ${table}:`, error);
     return [];
   }
-  return data;
+  return (data as T[]) ?? [];
 };
 
 /** Insert a new row into a table */
 export const insertRow = async <T = any>(table: string, payload: Partial<T>): Promise<boolean> => {
-  const { error } = await supabase.from<T>(table).insert(payload as any);
+  const { error } = await supabase.from(table).insert(payload as any);
   if (error) {
     console.error(`Supabase insertRow error for ${table}:`, error);
     return false;
@@ -28,7 +28,7 @@ export const insertRow = async <T = any>(table: string, payload: Partial<T>): Pr
 
 /** Update an existing row by primary key (assumes column named 'id') */
 export const updateRow = async <T = any>(table: string, id: string | number, changes: Partial<T>): Promise<boolean> => {
-  const { error } = await supabase.from<T>(table).update(changes as any).eq('id', id);
+  const { error } = await supabase.from(table).update(changes as any).eq('id', id);
   if (error) {
     console.error(`Supabase updateRow error for ${table} id=${id}:`, error);
     return false;

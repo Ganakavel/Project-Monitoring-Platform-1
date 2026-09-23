@@ -198,13 +198,13 @@ export function subscribeToFirestoreChat(
 }
 
 // ── Send Message to Firestore Cloud ──────────────────────────────────────────
-export async function sendFirestoreChatMessage(message: Omit<ChatMessage, 'id'>): Promise<boolean> {
+export async function sendFirestoreChatMessage(message: ChatMessage): Promise<boolean> {
   const { success, db } = initFirebase();
   if (!success || !db) return false;
 
   try {
-    const chatRef = collection(db, 'chat_messages');
-    await addDoc(chatRef, {
+    const chatDocRef = doc(db, 'chat_messages', message.id);
+    await setDoc(chatDocRef, {
       senderId: message.senderId,
       senderName: message.senderName,
       senderAvatar: message.senderAvatar,
